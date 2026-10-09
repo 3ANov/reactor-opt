@@ -1,0 +1,62 @@
+[
+  {
+    "id": "reactor-output",
+    "name": "Оптимизация производительности реакторов",
+    "description": "Максимизация выхода целевого продукта в системе двух реакторов непрерывного действия",
+    "objective": "alpha*(x**2 + beta*y - mu*volume1)**exponent + alpha1*(beta1*x + y**2 - mu1*volume2)**exponent",
+    "direction": "max",
+    "variables": [
+      {
+        "name": "x",
+        "display_name": "A₁",
+        "unit": "м³/ч",
+        "min": 1,
+        "max": 10
+      },
+      {
+        "name": "y",
+        "display_name": "A₂",
+        "unit": "м³/ч",
+        "min": 1,
+        "max": 10
+      }
+    ],
+    "coefficients": {
+      "alpha": 1,
+      "alpha1": 1,
+      "beta": 1,
+      "beta1": 1,
+      "mu": 1,
+      "mu1": 1,
+      "exponent": 2,
+      "volume1": 11,
+      "volume2": 7,
+      "reactor_count": 2
+    },
+    "constraints": [
+      {
+        "coefficients": {
+          "x": 1,
+          "y": 1
+        },
+        "operator": "<=",
+        "value": 8
+      }
+    ],
+    "derived_metrics": [
+      {
+        "id": "shift-output",
+        "name": "Выход за смену",
+        "expression": "C*shift_hours",
+        "unit": "кг",
+        "parameters": {
+          "shift_hours": 8
+        },
+        "symbol": "Q"
+      }
+    ],
+    "builtin": true,
+    "objective_label": "C",
+    "objective_unit": "кг/ч"
+  }
+]
