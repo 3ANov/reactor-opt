@@ -9,8 +9,9 @@ def text_label(text: str) -> QLabel:
     return label
 
 
-def page_layout(title: str) -> tuple[QWidget, QVBoxLayout]:
-    page = QWidget()
+def page_layout(title: str, *, page: QWidget | None = None) -> tuple[QWidget, QVBoxLayout]:
+    if page is None:
+        page = QWidget()
     layout = QVBoxLayout(page)
     layout.setContentsMargins(16, 16, 16, 16)
     layout.setSpacing(12)

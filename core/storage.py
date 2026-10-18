@@ -1,6 +1,5 @@
 import json
-from collections.abc import Mapping
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from pathlib import Path
 
 from sqlalchemy import URL, create_engine, delete, select
@@ -8,126 +7,15 @@ from sqlalchemy.dialects.sqlite import insert
 
 from core.auth import Session
 from core.database import metadata, methods, tasks
-from core.expressions import DerivedMetric, ExpressionModel
 from core.plugin_loader import plugin_directory
 from core.registry import MethodRegistry
-from core.tasks import TaskDefinition, TaskLibrary, linear_constraints, model_task
-from plugin_api import AlgorithmParameters, LinearConstraintSet, MethodMetadata
-
-
-def json_text(value: object) -> str:
-    text = json.dumps(value, ensure_ascii=False, allow_nan=False)
-    if len(text) > 65536:
-        raise ValueError("Данные задания слишком велики.")
-    return text
-
-
-def json_data(text: str):
-    if len(text) > 65536:
-        raise ValueError("Данные задания слишком велики.")
-    return json.loads(text)
-
-
-def task_to_record(task: TaskDefinition) -> dict:
-    if not isinstance(task.problem.constraints, LinearConstraintSet):
-        raise ValueError("Хранилище пока поддерживает только линейные ограничения двух переменных.")
-    model = task.model_parameters
-    if not isinstance(model, ExpressionModel):
-        raise ValueError("Для сохранения нужна модель с формулой.")
-    if task.problem.objective != model.objective:
-        raise ValueError("Целевая функция не соответствует параметрам сохраняемой модели.")
-    symbols = model.variables
-    variables = [
-        {"name": symbol, "display_name": name, "unit": unit, "min": low, "max": high}
-        for symbol, name, unit, (low, high) in zip(
-            symbols,
-            task.variable_names,
-            task.variable_units,
-            task.problem.constraints.bounds,
-        )
-    ]
-    constraints = [
-        {"coefficients": dict(zip(symbols, (a, b))), "operator": "<=", "value": c}
-        for a, b, c in task.problem.constraints.inequalities
-    ]
-    metrics = [
-        {
-            "id": metric.key,
-            "name": metric.name,
-            "expression": metric.formula,
-            "unit": metric.unit,
-            "parameters": dict(metric.parameters),
-            "symbol": metric.symbol,
-        }
-        for metric in task.derived_metrics
-    ]
-    parameters = dict(task.coefficients)
-    return {
-        "id": task.id,
-        "name": task.name,
-        "description": task.description,
-        "objective": task.formula,
-        "direction": "max" if task.problem.direction == "maximize" else "min",
-        "variables_json": json_text(variables),
-        "parameters_json": json_text(parameters),
-        "constraints_json": json_text(constraints),
-        "derived_metrics_json": json_text(metrics),
-        "is_builtin": int(task.builtin),
-        "objective_label": task.objective_label,
-        "objective_unit": task.objective_unit,
-    }
-
-
-def task_from_record(record: Mapping) -> TaskDefinition:
-    variables = json_data(record["variables_json"])
-    if len(variables) != 2:
-        raise ValueError("В задании должно быть ровно две переменные.")
-    names = tuple(variable["name"] for variable in variables)
-    parameters = json_data(record["parameters_json"])
-    raw_metrics = json_data(record["derived_metrics_json"])
-    if len(raw_metrics) > 16:
-        raise ValueError("Допустимо до 16 дополнительных показателей.")
-    metrics = tuple(
-        DerivedMetric(
-            row["id"],
-            row["name"],
-            row["expression"],
-            row["unit"],
-            tuple(row["parameters"].items()),
-            row.get("symbol", ""),
-        )
-        for row in raw_metrics
-    )
-    model = ExpressionModel(record["objective"], names, tuple(parameters.items()))
-    raw_constraints = json_data(record["constraints_json"])
-    if len(raw_constraints) > 64:
-        raise ValueError("Слишком много ограничений.")
-    rows = []
-    for row in raw_constraints:
-        if set(row["coefficients"]) != set(names):
-            raise ValueError("Переменные в ограничении не соответствуют заданию.")
-        rows.append((*(row["coefficients"][name] for name in names), row["operator"], row["value"]))
-    constraints = linear_constraints(tuple((v["min"], v["max"]) for v in variables), rows)
-    if record["direction"] not in ("min", "max"):
-        raise ValueError("Направление задания должно быть min или max.")
-    task = model_task(
-        record["id"],
-        record["name"],
-        record["description"],
-        model,
-        constraints,
-        "maximize" if record["direction"] == "max" else "minimize",
-        names,
-        tuple(v["unit"] for v in variables),
-        metrics,
-        record["objective_label"],
-        record["objective_unit"],
-    )
-    return replace(
-        task,
-        builtin=bool(record["is_builtin"]),
-        variable_names=tuple(v.get("display_name", v["name"]) for v in variables),
-    )
+from core.task_serialization import json_data as json_data
+from core.task_serialization import json_task_record
+from core.task_serialization import json_text as json_text
+from core.task_serialization import task_from_record as task_from_record
+from core.task_serialization import task_to_record as task_to_record
+from core.tasks import TaskDefinition, TaskLibrary
+from plugin_api import AlgorithmParameters, MethodMetadata
 
 
 class SQLiteStorage:
@@ -187,22 +75,7 @@ class SQLiteStorage:
                         f"Не удалось загрузить задания из {path.name}: {error}"
                     ) from error
 
-    @staticmethod
-    def _json_task_record(definition: Mapping) -> dict:
-        return {
-            "id": definition["id"],
-            "name": definition["name"],
-            "description": definition["description"],
-            "objective": definition["objective"],
-            "direction": definition["direction"],
-            "variables_json": json_text(definition["variables"]),
-            "parameters_json": json_text(definition.get("coefficients", {})),
-            "constraints_json": json_text(definition.get("constraints", [])),
-            "derived_metrics_json": json_text(definition.get("derived_metrics", [])),
-            "is_builtin": int(definition.get("builtin", False)),
-            "objective_label": definition.get("objective_label", "f"),
-            "objective_unit": definition.get("objective_unit", ""),
-        }
+    _json_task_record = staticmethod(json_task_record)
 
     def load_tasks(self) -> tuple[TaskDefinition, ...]:
         with self.engine.connect() as connection:

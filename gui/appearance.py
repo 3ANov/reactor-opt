@@ -138,6 +138,4 @@ def apply_theme(window: "MainWindow", index: int) -> None:
         QPushButton#directionButton:hover:!checked {{ background: {hover}; }}
         QLabel#secondaryText {{ color: {muted}; }}
     """)
-    window.objective_plot.set_theme(dark)
-    if window.surface_plot is not None:
-        window.surface_plot.set_theme(dark)
+    window.optimization_page.set_theme(dark)
