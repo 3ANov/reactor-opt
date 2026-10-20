@@ -12,7 +12,8 @@ from plugin_api import (
     Point,
 )
 
-from ._scan import SearchState, scan_points
+from ._scan import scan_points
+from ._search import SearchState
 
 
 def select_candidate(

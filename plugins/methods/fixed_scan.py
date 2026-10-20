@@ -10,7 +10,8 @@ from plugin_api import (
     OptimizationTask,
 )
 
-from ._scan import SearchState, scan_points
+from ._scan import scan_points
+from ._search import SearchState
 
 
 class FixedScanMethod(OptimizationMethod):
