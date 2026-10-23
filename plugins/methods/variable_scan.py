@@ -56,7 +56,8 @@ class VariableScanMethod(OptimizationMethod):
         name="Метод сканирования с переменным шагом поиска",
         description="Предварительный обзор всей области "
         "и уточнение нескольких перспективных участков. "
-        "Шаг уменьшается вдвое до заданной точности. "
+        "Шаг уменьшается вдвое до заданной точности; "
+        "в режиме точности по функции возможен ранний останов между этапами уточнения. "
         "Глобальная оптимальность не гарантируется.",
         category="Сеточные методы",
         builtin=True,
@@ -66,6 +67,8 @@ class VariableScanMethod(OptimizationMethod):
     capabilities = MethodCapabilities()
     supported_parameters = (
         "precision",
+        "function_precision",
+        "stopping_criterion",
         "initial_step",
         "regions",
         "max_evaluations",
@@ -84,6 +87,7 @@ class VariableScanMethod(OptimizationMethod):
         step = parameters.initial_step
         regions = [problem.constraints]
         while regions:
+            previous_point, previous_value = state.best_point, state.best_value
             state.begin_stage()
             candidates: list[tuple[float, Point]] = []
             for region in regions:
@@ -101,6 +105,8 @@ class VariableScanMethod(OptimizationMethod):
                 break
             if state.best_point is None:
                 state.reason = "Допустимых решений нет"
+                break
+            if state.function_converged(previous_point, previous_value):
                 break
             if step <= parameters.precision:
                 state.reason = "Завершено уточнение с заданным шагом"

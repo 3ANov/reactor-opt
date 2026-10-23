@@ -25,11 +25,17 @@ class AlgorithmParameters:
     max_evaluations: int = 1_000_000
     regions: int = 5
     keep_history: bool = False
+    function_precision: float = 1e-6
+    stopping_criterion: Literal["coordinates", "function", "evaluations"] = "coordinates"
 
     def __post_init__(self) -> None:
         if not all(isfinite(v) and v > 0 for v in (self.precision, self.initial_step)):
             raise ValueError("Точность и начальный шаг должны быть конечными и положительными.")
-        if self.initial_step < self.precision:
+        if not isfinite(self.function_precision) or self.function_precision <= 0:
+            raise ValueError("Точность по функции должна быть конечной и положительной.")
+        if self.stopping_criterion not in ("coordinates", "function", "evaluations"):
+            raise ValueError("Критерий остановки: по координатам, по функции или по вычислениям.")
+        if self.stopping_criterion == "coordinates" and self.initial_step < self.precision:
             raise ValueError("Начальный шаг не может быть меньше точности.")
         if type(self.max_evaluations) is not int or self.max_evaluations < 1:
             raise ValueError("Лимит вычислений должен быть положительным целым числом.")

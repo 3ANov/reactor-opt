@@ -19,11 +19,14 @@ def axis_values(low: float, high: float, step: float) -> Iterator[float]:
     yield high
 
 
-def scan_points(constraints: LinearConstraintSet, step: float) -> Iterator[Point]:
+def scan_points(
+    constraints: LinearConstraintSet, step: float, *, include_vertices: bool = True
+) -> Iterator[Point]:
     corners = constraints.vertices()
     if not corners:
         return
-    yield from corners
+    if include_vertices:
+        yield from corners
     xmin, xmax = min(p[0] for p in corners), max(p[0] for p in corners)
     ymin, ymax = min(p[1] for p in corners), max(p[1] for p in corners)
     for x in axis_values(xmin, xmax, step):

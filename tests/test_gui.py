@@ -256,10 +256,26 @@ def test_duplicate_and_delete_keep_task_selections_consistent(app, window, monke
 def test_method_availability_updates_calculation_choices(window):
     page = window.optimization_page
     window.methods_page.change_method_availability("fixed", False)
-    assert [page.method.itemData(i) for i in range(page.method.count())] == ["variable"]
+    assert [page.method.itemData(i) for i in range(page.method.count())] == [
+        "nelder-mead",
+        "variable",
+    ]
+    assert page.method.currentData() == "nelder-mead"
     assert page.calculate_button.isEnabled()
 
+    window.methods_page.change_method_availability("nelder-mead", False)
+    assert [page.method.itemData(i) for i in range(page.method.count())] == ["variable"]
+    assert page.method.currentData() == "variable"
+    assert page.calculate_button.isEnabled()
+
+    window.methods_page.change_method_availability("nelder-mead", True)
+    assert page.method.currentData() == "variable"
+
     window.methods_page.change_method_availability("variable", False)
+    assert page.method.currentData() == "nelder-mead"
+    assert page.calculate_button.isEnabled()
+
+    window.methods_page.change_method_availability("nelder-mead", False)
     assert page.method.count() == 0
     assert not page.calculate_button.isEnabled()
     assert not page.save_defaults_button.isEnabled()
@@ -269,6 +285,9 @@ def test_method_availability_updates_calculation_choices(window):
     assert page.method.currentData() == "fixed"
     assert page.calculate_button.isEnabled()
     assert page.save_defaults_button.isEnabled()
+
+    window.methods_page.change_method_availability("nelder-mead", True)
+    assert page.method.currentData() == "fixed"
 
 
 def start_waiting_method(app, window):

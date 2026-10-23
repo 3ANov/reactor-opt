@@ -76,6 +76,24 @@ class SearchState:
                 )
             )
 
+    def function_converged(
+        self, previous_point: Point | None, previous_value: float | None
+    ) -> bool:
+        # Repeated trials and unsuccessful probes are not new approximations.
+        if (
+            self.parameters.stopping_criterion != "function"
+            or previous_point is None
+            or previous_value is None
+            or self.best_point == previous_point
+            or self.best_value is None
+            or self.sign * self.best_value <= self.sign * previous_value
+        ):
+            return False
+        if abs(self.best_value - previous_value) <= self.parameters.function_precision:
+            self.reason = "Достигнута точность по функции"
+            return True
+        return False
+
     def result(self, method_name: str) -> OptimizationResult:
         return OptimizationResult(
             self.best_point,

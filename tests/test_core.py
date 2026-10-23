@@ -8,7 +8,7 @@ from core.storage import SQLiteStorage
 from core.tasks import TaskDefinition
 from plugin_api import AlgorithmParameters
 
-METHODS = ("fixed", "variable")
+METHODS = ("fixed", "variable", "nelder-mead")
 
 
 @pytest.fixture

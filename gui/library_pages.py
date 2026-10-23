@@ -25,6 +25,8 @@ from gui.widgets import collapsible, page_layout, text_label
 
 PARAMETER_LABELS = {
     "precision": "Точность координат",
+    "function_precision": "Точность по функции ε",
+    "stopping_criterion": "Критерий остановки",
     "initial_step": "Начальный шаг поиска",
     "regions": "Перспективных областей",
     "max_evaluations": "Лимит вычислений",
@@ -260,7 +262,16 @@ class MethodsPage(QWidget):
             defaults = []
             for name in method.supported_parameters:
                 value = getattr(metadata.defaults, name)
-                value_text = ("да" if value else "нет") if isinstance(value, bool) else str(value)
+                if name == "stopping_criterion":
+                    value_text = {
+                        "coordinates": "По координатам δ",
+                        "function": "По функции ε",
+                        "evaluations": "По числу вычислений N",
+                    }[value]
+                else:
+                    value_text = (
+                        ("да" if value else "нет") if isinstance(value, bool) else str(value)
+                    )
                 defaults.append(f"{PARAMETER_LABELS[name]}: {value_text}")
             for name, value in metadata.fixed_parameters:
                 title = "Коэффициент уменьшения шага" if name == "step_reduction" else name
