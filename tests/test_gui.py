@@ -373,3 +373,42 @@ def test_regular_user_sees_read_only_library_and_no_admin_pages(app):
         session.logout()
         admin.logout()
         storage.close()
+
+
+def test_small_evaluation_limit_displays_result_without_warning(app, window):
+    page = window.optimization_page
+    page.max_evaluations.setValue(2)
+    page.keep_history.setChecked(True)
+    page.calculate_button.click()
+    wait_until(app, lambda: window.worker is None)
+
+    result = page.last_result
+    assert result is not None
+    assert result.evaluations == 2
+    assert result.reason == "Достигнут лимит вычислений"
+    assert result.point is not None
+    assert page.current_problem().constraints.contains(result.point)
+    assert page.result_values["evaluations"].text() == "2"
+    assert page.result_values["reason"].text() == "Выполнено заданное число вычислений"
+    assert window.statusBar().currentMessage() == "Выполнено заданное число вычислений"
+    assert "Поиск не завершён" not in page.result_warning.text()
+    assert "Показан промежуточный результат" not in page.result_warning.text()
+    assert page.result_details.isVisible()
+    assert page.calculate_button.isEnabled()
+    assert not page.cancel_button.isEnabled()
+
+
+def test_second_builtin_task_can_be_selected_and_calculated(app, window):
+    page = window.optimization_page
+    index = next(i for i in range(page.task.count()) if page.task.itemData(i).id == "mixing-cost")
+    page.task.setCurrentIndex(index)
+
+    assert page.current_problem().direction == "minimize"
+    assert page.task_heading.text() == "Подбор режима смешения"
+    assert page.method.currentData() == "nelder-mead"
+    page.calculate_button.click()
+    wait_until(app, lambda: window.worker is None)
+
+    assert page.last_result.point == pytest.approx((2, 3), abs=0.01)
+    assert page.last_result.value == pytest.approx(0, abs=0.001)
+    assert page.result_details.isVisible()

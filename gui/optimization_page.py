@@ -359,7 +359,11 @@ class OptimizationPage(QWidget):
             "method": result.method,
             "evaluations": str(result.evaluations),
             "stages": str(result.stages),
-            "reason": result.reason,
+            "reason": (
+                "Выполнено заданное число вычислений"
+                if result.reason == "Достигнут лимит вычислений"
+                else result.reason
+            ),
         }
         if result.point is not None and result.value is not None:
             x, y = result.point
@@ -374,10 +378,7 @@ class OptimizationPage(QWidget):
         self.result_details.show()
         self.result_message.hide()
         warnings = []
-        if result.reason in (
-            "Достигнут лимит вычислений",
-            "Расчёт отменён",
-        ):
+        if result.reason == "Расчёт отменён":
             warnings.append(
                 "Поиск не завершён. "
                 + (
@@ -391,7 +392,7 @@ class OptimizationPage(QWidget):
         warnings.append("Глобальная оптимальность результата не гарантируется.")
         self.result_warning.setText("\n".join(warnings))
         self.result_warning.show()
-        self.message.emit(result.reason)
+        self.message.emit(values["reason"])
 
     def show_error(self, message: str) -> None:
         self.last_result = None

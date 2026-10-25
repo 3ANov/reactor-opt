@@ -58,5 +58,47 @@
     "builtin": true,
     "objective_label": "C",
     "objective_unit": "кг/ч"
+  },
+  {
+    "id": "mixing-cost",
+    "name": "Подбор режима смешения",
+    "description": "Минимизация взвешенного штрафа за отклонение расходов двух потоков от целевых значений: x_target = 2 м³/ч, y_target = 3 м³/ч; веса a = 1, b = 2. Каждый расход — от 0 до 6 м³/ч, суммарный — не более 8 м³/ч.",
+    "objective": "a*(x-x_target)**2 + b*(y-y_target)**2",
+    "direction": "min",
+    "variables": [
+      {
+        "name": "x",
+        "display_name": "Q₁",
+        "unit": "м³/ч",
+        "min": 0,
+        "max": 6
+      },
+      {
+        "name": "y",
+        "display_name": "Q₂",
+        "unit": "м³/ч",
+        "min": 0,
+        "max": 6
+      }
+    ],
+    "coefficients": {
+      "a": 1,
+      "b": 2,
+      "x_target": 2,
+      "y_target": 3
+    },
+    "constraints": [
+      {
+        "coefficients": {
+          "x": 1,
+          "y": 1
+        },
+        "operator": "<=",
+        "value": 8
+      }
+    ],
+    "builtin": true,
+    "objective_label": "J",
+    "objective_unit": ""
   }
 ]
