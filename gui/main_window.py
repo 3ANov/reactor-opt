@@ -1,5 +1,5 @@
-from PySide6.QtCore import QTimer, Signal
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtCore import QSize, QTimer, Signal
+from PySide6.QtGui import QCloseEvent, QResizeEvent
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QScrollArea, QStackedWidget, QWidget
 
 from core.auth import Session
@@ -12,6 +12,7 @@ from gui.calculation_controller import CalculationController
 from gui.calculation_worker import CalculationWorker
 from gui.library_pages import MethodsPage, TasksPage
 from gui.optimization_page import OptimizationPage
+from gui.widgets import fit_to_screen
 from plugin_api import OptimizationResult
 
 
@@ -54,6 +55,7 @@ class MainWindow(QMainWindow):
         self.session_timer.setInterval(2000)
         self.session_timer.timeout.connect(self.check_session)
         self.session_timer.start()
+        fit_to_screen(self, QSize(1240, 800))
 
     @property
     def worker(self) -> CalculationWorker | None:
@@ -139,6 +141,8 @@ class MainWindow(QMainWindow):
         self.optimization_page.refresh_tasks(selected)
 
     def section_changed(self, index: int) -> None:
+        if index == 0:
+            self.optimization_page.adapt_to_width(self.width() - self.sidebar.width())
         if index >= 4:
             if not self.allow_admin():
                 self.pages.setCurrentIndex(0)
@@ -197,6 +201,11 @@ class MainWindow(QMainWindow):
     def finish_close_if_ready(self) -> None:
         if self.close_pending and not self.calculation.busy and not self.visualization_busy:
             self.close()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "optimization_page"):
+            self.optimization_page.adapt_to_width(self.width() - self.sidebar.width())
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.calculation.busy or self.visualization_busy:

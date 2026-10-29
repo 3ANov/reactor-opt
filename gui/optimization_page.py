@@ -1,7 +1,7 @@
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStackedWidget,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -67,10 +68,58 @@ class OptimizationPage(QWidget):
         self.method_parameters: dict[str, AlgorithmParameters] = {}
         self.active_method_id: str | None = None
         self.dark = False
+        self._horizontal_control_width = 310
+        self._available_width = self.width()
+        self._layout_timer = QTimer(self)
+        self._layout_timer.setSingleShot(True)
+        self._layout_timer.timeout.connect(self._restore_horizontal_sizes)
         _build_page(self)
         self._connect_controls()
         self.refresh_methods()
         self.configure_task_display()
+
+    def adapt_to_width(self, available_width: int) -> None:
+        self._available_width = available_width
+        for pane, minimum in ((self.controls_scroll, 280), (self.plot_scroll, 300)):
+            scrollbar = pane.style().pixelMetric(QStyle.PixelMetric.PM_ScrollBarExtent)
+            pane.setMinimumWidth(max(minimum, pane.widget().minimumSizeHint().width() + scrollbar))
+        margins = self.layout().contentsMargins()
+        workspace_width = available_width - margins.left() - margins.right()
+        horizontal_minimum = (
+            self.controls_scroll.minimumWidth()
+            + self.plot_scroll.minimumWidth()
+            + self.splitter.handleWidth()
+        )
+        orientation = (
+            Qt.Orientation.Vertical
+            if workspace_width < horizontal_minimum
+            else Qt.Orientation.Horizontal
+        )
+        if self.splitter.orientation() == orientation:
+            if orientation == Qt.Orientation.Horizontal:
+                self._layout_timer.start(0)
+            return
+        self.splitter.setOrientation(orientation)
+        if orientation == Qt.Orientation.Vertical:
+            self._layout_timer.stop()
+            self.splitter.setSizes([240, max(160, self.splitter.height() - 240)])
+        else:
+            self._layout_timer.start(0)
+
+    def _remember_control_width(self, _position: int, _index: int) -> None:
+        if self.splitter.orientation() == Qt.Orientation.Horizontal:
+            self._horizontal_control_width = self.splitter.sizes()[0]
+
+    def _restore_horizontal_sizes(self) -> None:
+        if self.splitter.orientation() != Qt.Orientation.Horizontal:
+            return
+        # Apply after Qt has resized the stacked page and the splitter itself.
+        available = self.splitter.width() - self.splitter.handleWidth()
+        control_width = max(
+            self.controls_scroll.minimumWidth(),
+            min(self._horizontal_control_width, available - self.plot_scroll.minimumWidth()),
+        )
+        self.splitter.setSizes([control_width, available - control_width])
 
     @property
     def busy(self) -> bool:
@@ -169,6 +218,7 @@ class OptimizationPage(QWidget):
             self.surface_plot.set_theme(self.dark)
             self.surface_plot.set_result(self.last_result)
         self.visualization_stack.setCurrentIndex(index)
+        self.adapt_to_width(self._available_width)
 
     def refresh_tasks(self, select_id: str | None = None) -> None:
         selected = select_id or (self.current_task.id if self.current_task else None)
@@ -427,6 +477,7 @@ def _build_workspace(window: "OptimizationPage") -> QSplitter:
     window.splitter.setStretchFactor(1, 1)
     window.splitter.setSizes([310, 680])
     window.splitter.setChildrenCollapsible(False)
+    window.splitter.splitterMoved.connect(window._remember_control_width)
     return window.splitter
 
 

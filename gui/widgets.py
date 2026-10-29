@@ -1,5 +1,36 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import (
+    QLabel,
+    QScrollArea,
+    QSizePolicy,
+    QStyle,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+
+def fit_to_screen(widget: QWidget, preferred_size: QSize) -> None:
+    """Keep the initial client area and window frame inside the current screen."""
+    parent = widget.parentWidget()
+    screen = parent.screen() if parent is not None else widget.screen()
+    if screen is None:
+        widget.resize(preferred_size)
+        return
+    available = screen.availableGeometry()
+    title_height = widget.style().pixelMetric(QStyle.PixelMetric.PM_TitleBarHeight)
+    size_limit = QSize(
+        max(1, available.width() - 24),
+        max(1, available.height() - title_height - 24),
+    )
+    widget.setMinimumSize(widget.minimumSize().boundedTo(size_limit))
+    size = preferred_size.boundedTo(size_limit).expandedTo(widget.minimumSize())
+    widget.resize(size)
+    if size != preferred_size:
+        widget.move(
+            available.x() + (available.width() - size.width()) // 2,
+            available.y() + (available.height() - size.height() - title_height) // 2,
+        )
 
 
 def text_label(text: str) -> QLabel:

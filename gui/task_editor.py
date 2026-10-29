@@ -2,7 +2,7 @@ import json
 from dataclasses import replace
 from uuid import uuid4
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from core.expressions import DerivedMetric, ExpressionModel
 from core.tasks import TaskDefinition, linear_constraints, model_task
+from gui.widgets import fit_to_screen
 from plugin_api import LinearConstraintSet
 
 
@@ -49,7 +50,6 @@ class TaskEditor(QDialog):
         self.read_only = view_only or unsupported
         self.saved_task: TaskDefinition | None = None
         self.setWindowTitle("Просмотр задания" if self.read_only else "Редактор задания")
-        self.resize(780, 780)
         layout = QVBoxLayout(self)
         content = QWidget()
         rows = QVBoxLayout(content)
@@ -80,6 +80,7 @@ class TaskEditor(QDialog):
         if self.read_only:
             content.setEnabled(False)
             self.buttons.button(QDialogButtonBox.StandardButton.Save).hide()
+        fit_to_screen(self, QSize(780, 780))
 
     def _add_description_fields(self, rows: QVBoxLayout, task: TaskDefinition | None) -> None:
         form = QFormLayout()
