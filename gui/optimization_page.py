@@ -26,7 +26,7 @@ from core.auth import Session
 from core.problem import OptimizationProblem
 from core.registry import MethodRegistry
 from core.tasks import TaskDefinition, TaskLibrary
-from gui.widgets import collapsible, page_layout, scroll_panel, text_label
+from gui.widgets import ParameterSpinBox, collapsible, page_layout, scroll_panel, text_label
 from plugin_api import AlgorithmParameters, OptimizationResult
 from visualization.objective_plot import ObjectivePlot
 
@@ -129,6 +129,8 @@ class OptimizationPage(QWidget):
         self.method.currentIndexChanged.connect(self.update_method_settings)
         self.direction.idClicked.connect(self.refresh_methods)
         self.precision.valueChanged.connect(self.sync_parameters)
+        self.function_precision.valueChanged.connect(self.sync_parameters)
+        self.stopping_criterion.currentIndexChanged.connect(self._stopping_criterion_changed)
         self.initial_step.valueChanged.connect(self.sync_parameters)
         self.max_evaluations.valueChanged.connect(self.sync_parameters)
         self.regions.valueChanged.connect(self.sync_parameters)
@@ -250,6 +252,10 @@ class OptimizationPage(QWidget):
             self.problem, direction=("maximize" if self.direction.checkedId() == 1 else "minimize")
         )
 
+    def _stopping_criterion_changed(self) -> None:
+        self.sync_parameters()
+        self.update_method_settings(self.method.currentIndex())
+
     def refresh_methods(self, _direction: int | None = None) -> None:
         selected = self.method.currentData()
         excluded = list(self.registry.load_errors)
@@ -276,7 +282,6 @@ class OptimizationPage(QWidget):
         problem = definition.problem if isinstance(definition, TaskDefinition) else definition
         if not isinstance(problem, OptimizationProblem):
             return
-        self.task.setToolTip(self.task.currentText())
         self.current_task = definition if isinstance(definition, TaskDefinition) else None
         self.problem = problem
         self.direction.button(1 if problem.direction == "maximize" else 0).setChecked(True)
@@ -292,6 +297,11 @@ class OptimizationPage(QWidget):
         self.refresh_methods()
 
     def configure_task_display(self) -> None:
+        _set_form_hint(
+            self.calculation_settings.layout(),
+            self.task,
+            f"{self.task.currentText()}\nВыбор целевой функции и ограничений задачи.",
+        )
         definition = self.current_task
         names = definition.variable_names if definition else ("x₁", "x₂")
         units = definition.variable_units if definition else ("", "")
@@ -303,6 +313,7 @@ class OptimizationPage(QWidget):
         self.task_description.setText(definition.description if definition else "")
         value_label = definition.objective_label if definition else "f"
         value_unit = definition.objective_unit if definition else ""
+        self.function_precision.setSuffix(f" {value_unit}" if value_unit else "")
         self.objective_plot.set_labels(axes, value_label)
         function_title = f"{value_label}, {value_unit}" if value_unit else value_label
         if self.surface_plot is not None:
@@ -344,21 +355,88 @@ class OptimizationPage(QWidget):
                     self.method_parameters.get(method_id, method.metadata.defaults)
                 )
         supported = method.supported_parameters if method is not None else ()
+        criterion = self.stopping_criterion.currentData()
+        grid_method = method_id in ("fixed", "variable")
         for name, field in (
+            ("stopping_criterion", self.stopping_criterion),
             ("initial_step", self.initial_step),
             ("regions", self.regions),
             ("max_evaluations", self.max_evaluations),
             ("keep_history", self.keep_history),
         ):
             self.algorithm_form.setRowVisible(field, name in supported)
+        self.algorithm_form.setRowVisible(
+            self.function_precision,
+            "function_precision" in supported and criterion == "function",
+        )
+        self.algorithm_form.setRowVisible(
+            self.precision,
+            "precision" in supported
+            and (
+                grid_method or criterion == "coordinates" or "stopping_criterion" not in supported
+            ),
+        )
         fixed = dict(method.metadata.fixed_parameters) if method is not None else {}
         self.algorithm_form.setRowVisible(self.reduction_factor, "step_reduction" in fixed)
         if "step_reduction" in fixed:
             self.reduction_factor.setText(f"{fixed['step_reduction']:g} (фиксирован)")
         self.algorithm_settings.setTitle("Параметры метода")
         self.precision.setEnabled("precision" in supported)
-        self.calculation_settings.layout().labelForField(self.precision).setText(
-            "Точность координат:"
+        precision_labels = {"fixed": "Шаг сетки:", "variable": "Конечный шаг сетки:"}
+        self.algorithm_form.labelForField(self.precision).setText(
+            precision_labels.get(method_id, "Точность по координатам δ:")
+        )
+        _set_form_hint(
+            self.calculation_settings.layout(),
+            self.method,
+            f"{self.method.currentText()}\nАлгоритм поиска минимума или максимума функции.",
+        )
+        precision_hints = {
+            "nelder-mead": (
+                "Максимальный размер поискового симплекса для критерия «По координатам»."
+            ),
+            "variable": (
+                "Конечный шаг сетки при уточнении результата. "
+                "Задаёт подробность поиска при любом критерии остановки."
+            ),
+            "fixed": (
+                "Расстояние между соседними точками сетки. "
+                "Задаёт подробность перебора при любом критерии остановки."
+            ),
+        }
+        _set_form_hint(
+            self.algorithm_form,
+            self.precision,
+            precision_hints.get(method_id, "Точность поиска по координатам."),
+        )
+        initial_step_hints = {
+            "nelder-mead": "Начальный размер поискового треугольника (симплекса).",
+            "variable": "Шаг первого прохода. Затем он уменьшается для уточнения результата.",
+        }
+        _set_form_hint(
+            self.algorithm_form,
+            self.initial_step,
+            initial_step_hints.get(
+                method_id, "Начальный масштаб поиска перед уточнением результата."
+            ),
+        )
+        function_hints = {
+            "fixed": (
+                "Порог изменения между улучшениями результата. "
+                "Может завершить перебор до просмотра всей сетки."
+            ),
+            "variable": "Порог изменения лучшего значения между этапами уточнения.",
+            "nelder-mead": (
+                "Порог изменения лучшей вершины или разброса значений функции в симплексе."
+            ),
+        }
+        _set_form_hint(
+            self.algorithm_form,
+            self.function_precision,
+            function_hints.get(
+                method_id,
+                "Допустимое абсолютное изменение значений функции для критерия «По функции».",
+            ),
         )
         units = self.current_task.variable_units if self.current_task else ("", "")
         suffix = f" {units[0]}" if units[0] and units[0] == units[1] else ""
@@ -371,25 +449,41 @@ class OptimizationPage(QWidget):
     def load_method_parameters(self, parameters: AlgorithmParameters) -> None:
         widgets = (
             self.precision,
+            self.function_precision,
+            self.stopping_criterion,
             self.initial_step,
             self.regions,
             self.max_evaluations,
             self.keep_history,
         )
         blockers = [QSignalBlocker(widget) for widget in widgets]
-        self.precision.setValue(parameters.precision)
-        self.initial_step.setRange(self.precision.value(), max(6.0, parameters.initial_step))
-        self.initial_step.setValue(parameters.initial_step)
+        self.precision.set_parameter_value(parameters.precision)
+        self.function_precision.set_parameter_value(parameters.function_precision)
+        self.stopping_criterion.setCurrentIndex(
+            self.stopping_criterion.findData(parameters.stopping_criterion)
+        )
+        self.initial_step.set_parameter_value(parameters.initial_step)
         self.regions.setValue(parameters.regions)
         self.max_evaluations.setValue(parameters.max_evaluations)
         self.keep_history.setChecked(parameters.keep_history)
         del blockers
         self.sync_parameters()
 
+    def _initial_step_minimum(self) -> float:
+        if self.stopping_criterion.currentData() != "coordinates":
+            return 10 ** -self.initial_step.decimals()
+        return self.precision.value()
+
     def sync_parameters(self) -> None:
-        self.initial_step.setMinimum(self.precision.value())
+        with QSignalBlocker(self.initial_step):
+            self.initial_step.setDecimals(
+                max(self.initial_step.decimals(), self.precision.decimals())
+            )
+            self.initial_step.setMinimum(self._initial_step_minimum())
         self.algorithm_parameters = AlgorithmParameters(
             precision=self.precision.value(),
+            function_precision=self.function_precision.value(),
+            stopping_criterion=self.stopping_criterion.currentData(),
             initial_step=self.initial_step.value(),
             max_evaluations=self.max_evaluations.value(),
             regions=self.regions.value(),
@@ -456,6 +550,13 @@ class OptimizationPage(QWidget):
         self.message.emit("Ошибка расчёта")
 
 
+def _set_form_hint(form: QFormLayout, field: QWidget, text: str) -> None:
+    field.setToolTip(text)
+    label = form.labelForField(field)
+    if label is not None:
+        label.setToolTip(text)
+
+
 def _build_page(window: "OptimizationPage") -> QWidget:
     page, layout = page_layout("Оптимизация производительности реакторов", page=window)
     window.task_heading = layout.itemAt(0).widget()
@@ -515,10 +616,14 @@ def build_algorithm_options(window: "OptimizationPage") -> QWidget:
     window.algorithm_settings = QGroupBox("Сканирование с переменным шагом")
     window.algorithm_form = QFormLayout(window.algorithm_settings)
     window.algorithm_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+    _add_stopping_parameters(window)
     _add_scan_parameters(window)
     _add_search_limits(window)
     layout.addWidget(window.algorithm_settings)
     window.save_defaults_button = QPushButton("Сохранить параметры по умолчанию")
+    window.save_defaults_button.setToolTip(
+        "Сохранить текущие параметры как значения по умолчанию для выбранного метода."
+    )
     window.save_defaults_button.clicked.connect(window.save_method_defaults)
     window.save_defaults_button.setVisible(window.session.is_admin)
     layout.addWidget(window.save_defaults_button)
@@ -561,8 +666,9 @@ def _build_problem_settings(window: "OptimizationPage") -> QWidget:
     form = QFormLayout(settings)
     form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
     _add_task_and_method_selection(window, form)
-    form.addRow("Направление поиска:", _build_direction_buttons(window))
-    form.addRow("Точность координат:", _build_precision(window))
+    direction_panel = _build_direction_buttons(window)
+    form.addRow("Направление поиска:", direction_panel)
+    _set_form_hint(form, direction_panel, "Искать наименьшее или наибольшее значение функции.")
     return settings
 
 
@@ -589,7 +695,6 @@ def _add_task_and_method_selection(window: "OptimizationPage", form: QFormLayout
     window.task.setMinimumContentsLength(16)
     for task in window.task_library.list_tasks():
         window.task.addItem(task.name, task)
-    window.task.setToolTip(window.task.currentText())
     window.task.currentIndexChanged.connect(window.select_problem)
     form.addRow("Задача:", window.task)
     window.method = QComboBox()
@@ -614,6 +719,11 @@ def _build_direction_buttons(window: "OptimizationPage") -> QWidget:
         button = QPushButton(title)
         button.setObjectName("directionButton")
         button.setCheckable(True)
+        button.setToolTip(
+            "Искать наименьшее значение целевой функции."
+            if index == 0
+            else "Искать наибольшее значение целевой функции."
+        )
         window.direction.addButton(button, index)
         direction_layout.addWidget(button)
     window.direction.button(1 if window.problem.direction == "maximize" else 0).setChecked(True)
@@ -621,11 +731,10 @@ def _build_direction_buttons(window: "OptimizationPage") -> QWidget:
 
 
 def _build_precision(window: "OptimizationPage") -> QDoubleSpinBox:
-    window.precision = QDoubleSpinBox()
-    window.precision.setDecimals(6)
-    window.precision.setRange(0.000001, 10.0)
+    window.precision = ParameterSpinBox(display_decimals=6, width_reference=10)
+    window.precision.setRange(0.000001, 1_000_000_000.0)
     window.precision.setSingleStep(0.01)
-    window.precision.setValue(window.algorithm_parameters.precision)
+    window.precision.set_parameter_value(window.algorithm_parameters.precision)
     window.precision.setSuffix(" м³/ч")
     return window.precision
 
@@ -656,15 +765,49 @@ def _build_result_fields(window: "OptimizationPage") -> None:
 
 
 def _add_scan_parameters(window: "OptimizationPage") -> None:
-    window.initial_step = QDoubleSpinBox()
-    window.initial_step.setRange(window.algorithm_parameters.precision, 6.0)
+    window.initial_step = ParameterSpinBox(display_decimals=2, width_reference=6)
+    window.initial_step.setRange(0.000001, 1_000_000_000.0)
     window.initial_step.setSingleStep(0.1)
-    window.initial_step.setValue(window.algorithm_parameters.initial_step)
+    window.initial_step.set_parameter_value(window.algorithm_parameters.initial_step)
     window.initial_step.setSuffix(" м³/ч")
     window.algorithm_form.addRow("Начальный шаг поиска:", window.initial_step)
     window.reduction_factor = QLabel("0,5 (фиксирован)")
-    window.reduction_factor.setToolTip("Текущий алгоритм уменьшает шаг вдвое.")
     window.algorithm_form.addRow("Коэффициент уменьшения шага:", window.reduction_factor)
+    _set_form_hint(
+        window.algorithm_form,
+        window.reduction_factor,
+        "На каждом этапе шаг умножается на этот коэффициент. Значение задано методом.",
+    )
+
+
+def _add_stopping_parameters(window: "OptimizationPage") -> None:
+    window.stopping_criterion = QComboBox()
+    for title, name in (
+        ("По координатам δ", "coordinates"),
+        ("По функции ε", "function"),
+        ("По числу вычислений N", "evaluations"),
+    ):
+        window.stopping_criterion.addItem(title, name)
+    window.stopping_criterion.setCurrentIndex(
+        window.stopping_criterion.findData(window.algorithm_parameters.stopping_criterion)
+    )
+    window.algorithm_form.addRow("Критерий остановки:", window.stopping_criterion)
+    _set_form_hint(
+        window.algorithm_form,
+        window.stopping_criterion,
+        "Выберите один критерий остановки. Лимит вычислений действует во всех режимах.",
+    )
+    window.algorithm_form.addRow("Точность по координатам δ:", _build_precision(window))
+    window.function_precision = ParameterSpinBox(display_decimals=9, width_reference=1e12)
+    window.function_precision.setRange(0.000000001, 1_000_000_000_000.0)
+    window.function_precision.setSingleStep(0.000001)
+    window.function_precision.set_parameter_value(window.algorithm_parameters.function_precision)
+    window.algorithm_form.addRow("Точность по функции ε:", window.function_precision)
+    _set_form_hint(
+        window.algorithm_form,
+        window.function_precision,
+        "Допустимое абсолютное изменение значений функции для критерия «По функции».",
+    )
 
 
 def _add_search_limits(window: "OptimizationPage") -> None:
@@ -672,10 +815,25 @@ def _add_search_limits(window: "OptimizationPage") -> None:
     window.regions.setRange(1, 20)
     window.regions.setValue(window.algorithm_parameters.regions)
     window.algorithm_form.addRow("Перспективных областей:", window.regions)
+    _set_form_hint(
+        window.algorithm_form,
+        window.regions,
+        "Сколько перспективных участков сохранять для дальнейшего уточнения.",
+    )
     window.max_evaluations = QSpinBox()
     window.max_evaluations.setRange(1, 10_000_000)
     window.max_evaluations.setValue(window.algorithm_parameters.max_evaluations)
     window.algorithm_form.addRow("Лимит вычислений:", window.max_evaluations)
+    _set_form_hint(
+        window.algorithm_form,
+        window.max_evaluations,
+        "Максимальное число вычислений целевой функции. Поиск может завершиться раньше.",
+    )
     window.keep_history = QCheckBox("Сохранять историю поиска")
     window.keep_history.setChecked(window.algorithm_parameters.keep_history)
     window.algorithm_form.addRow(window.keep_history)
+    _set_form_hint(
+        window.algorithm_form,
+        window.keep_history,
+        "Запоминать улучшения результата и этапы поиска для отображения на графике.",
+    )

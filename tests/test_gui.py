@@ -93,6 +93,7 @@ def window(app):
             problem=replace(source.problem, direction="minimize"),
             variable_names=("u", "v"),
             variable_units=("с", "с"),
+            objective_unit="К",
             builtin=False,
         )
     )
@@ -112,10 +113,113 @@ def window(app):
         storage.close()
 
 
+def test_nelder_mead_is_default_with_supported_parameters(window):
+    page = window.optimization_page
+    assert [page.method.itemData(i) for i in range(page.method.count())] == [
+        "nelder-mead",
+        "variable",
+        "fixed",
+    ]
+    assert page.method.currentData() == page.active_method_id == "nelder-mead"
+    assert page.algorithm_parameters == AlgorithmParameters()
+    assert page.precision.isEnabled()
+    assert not page.precision.isHidden()
+    assert page.calculation_settings.layout().labelForField(page.precision) is None
+    assert page.algorithm_form.labelForField(page.precision).text() == "Точность по координатам δ:"
+    assert not page.stopping_criterion.isHidden()
+    assert page.stopping_criterion.currentData() == "coordinates"
+    assert page.function_precision.isHidden()
+    assert not page.initial_step.isHidden()
+    assert not page.max_evaluations.isHidden()
+    assert not page.keep_history.isHidden()
+    assert page.regions.isHidden()
+    assert page.reduction_factor.isHidden()
+    assert page.calculate_button.isEnabled()
+    assert page.prepare_calculation() == (
+        "nelder-mead",
+        page.current_problem(),
+        AlgorithmParameters(),
+    )
+
+
+def test_nelder_mead_criterion_switch_preserves_inactive_precision(window):
+    page = window.optimization_page
+    page.precision.setValue(0.5)
+    page.initial_step.setValue(1.0)
+
+    page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData("function"))
+    page.function_precision.setValue(0.000123)
+    page.initial_step.setValue(0.1)
+
+    assert page.precision.isHidden()
+    assert page.algorithm_form.labelForField(page.precision).isHidden()
+    assert not page.function_precision.isHidden()
+    assert page.precision.value() == 0.5
+    assert page.prepare_calculation()[2] == replace(
+        AlgorithmParameters(),
+        precision=0.5,
+        initial_step=0.1,
+        function_precision=0.000123,
+        stopping_criterion="function",
+    )
+
+    page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData("evaluations"))
+    page.max_evaluations.setValue(123)
+    expected = page.algorithm_parameters
+    assert page.precision.isHidden()
+    assert page.function_precision.isHidden()
+    assert not page.max_evaluations.isHidden()
+
+    page.method.setCurrentIndex(page.method.findData("variable"))
+    page.method.setCurrentIndex(page.method.findData("nelder-mead"))
+    assert page.prepare_calculation()[2] == expected
+    assert page.precision.value() == 0.5
+    assert page.initial_step.value() == pytest.approx(0.1)
+
+    page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData("coordinates"))
+    assert not page.precision.isHidden()
+    assert page.function_precision.isHidden()
+    assert page.precision.value() == page.algorithm_parameters.precision == 0.5
+    assert page.initial_step.value() >= 0.5
+    assert page.algorithm_parameters.function_precision == pytest.approx(0.000123)
+    assert page.algorithm_parameters.max_evaluations == 123
+
+
+@pytest.mark.parametrize(
+    "method_id,label", (("fixed", "Шаг сетки:"), ("variable", "Конечный шаг сетки:"))
+)
+def test_grid_precision_remains_available_for_other_stopping_criteria(window, method_id, label):
+    page = window.optimization_page
+    page.method.setCurrentIndex(page.method.findData(method_id))
+    page.precision.setValue(0.05)
+    assert page.calculation_settings.layout().labelForField(page.precision) is None
+
+    for criterion in ("function", "evaluations"):
+        page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData(criterion))
+        assert not page.precision.isHidden()
+        assert page.algorithm_form.labelForField(page.precision).text() == label
+        assert page.precision.value() == page.prepare_calculation()[2].precision == 0.05
+        assert page.function_precision.isHidden() == (criterion != "function")
+
+    page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData("coordinates"))
+    assert not page.precision.isHidden()
+    assert page.algorithm_form.labelForField(page.precision).text() == label
+
+
 def test_method_switch_remembers_independent_parameters(window):
     page = window.optimization_page
+    page.precision.setValue(0.03)
+    page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData("function"))
+    page.function_precision.setValue(0.000321)
+    page.initial_step.setValue(1.5)
+    page.max_evaluations.setValue(321)
+    page.keep_history.setChecked(True)
+    nelder_mead_parameters = page.algorithm_parameters
+
     page.method.setCurrentIndex(page.method.findData("variable"))
     page.precision.setValue(0.02)
+    page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData("evaluations"))
+    page.function_precision.setValue(0.000123)
     page.initial_step.setValue(2.0)
     page.regions.setValue(3)
     page.keep_history.setChecked(True)
@@ -125,19 +229,77 @@ def test_method_switch_remembers_independent_parameters(window):
     assert page.initial_step.isHidden()
     assert page.regions.isHidden()
     page.precision.setValue(0.05)
+    page.function_precision.setValue(0.001)
 
     page.method.setCurrentIndex(page.method.findData("variable"))
     assert page.algorithm_parameters == expected
+    assert page.stopping_criterion.currentData() == "evaluations"
+    assert page.function_precision.isHidden()
     assert not page.initial_step.isHidden()
     assert not page.regions.isHidden()
     page.method.setCurrentIndex(page.method.findData("fixed"))
     assert page.precision.value() == 0.05
+    assert page.function_precision.value() == pytest.approx(0.001)
+    assert page.stopping_criterion.currentData() == "coordinates"
+    assert page.function_precision.isHidden()
+
+    page.method.setCurrentIndex(page.method.findData("nelder-mead"))
+    assert page.algorithm_parameters == nelder_mead_parameters
+    assert page.prepare_calculation()[2] == nelder_mead_parameters
+    assert page.stopping_criterion.currentData() == "function"
+    assert not page.function_precision.isHidden()
+    assert not page.initial_step.isHidden()
+    assert page.regions.isHidden()
 
 
-@pytest.mark.parametrize("method_id", ("fixed", "variable"))
-def test_calculation_displays_result_and_restores_controls(app, window, method_id):
+def test_saved_function_precision_is_loaded_as_method_default(window):
     page = window.optimization_page
-    page.method.setCurrentIndex(page.method.findData(method_id))
+    page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData("function"))
+    page.function_precision.setValue(0.000123)
+    expected = page.algorithm_parameters
+    page.save_defaults_button.click()
+
+    assert window.registry.get("nelder-mead").metadata.defaults == expected
+    assert page.settings_message.text() == "Значения по умолчанию сохранены."
+    page.method.setCurrentIndex(page.method.findData("fixed"))
+    page.method_parameters.pop("nelder-mead")
+    page.method.setCurrentIndex(page.method.findData("nelder-mead"))
+
+    assert page.function_precision.value() == pytest.approx(0.000123)
+    assert page.stopping_criterion.currentData() == "function"
+    assert not page.function_precision.isHidden()
+    assert page.prepare_calculation()[2] == expected
+
+
+def test_loading_defaults_preserves_small_values_and_large_grid_steps(window):
+    page = window.optimization_page
+    small = AlgorithmParameters(
+        precision=1e-8,
+        function_precision=1e-12,
+        initial_step=1e-4,
+        stopping_criterion="function",
+    )
+    page.method.setCurrentIndex(page.method.findData("fixed"))
+    window.registry.update_metadata("nelder-mead", defaults=small)
+    page.method_parameters.pop("nelder-mead", None)
+    page.method.setCurrentIndex(page.method.findData("nelder-mead"))
+
+    assert page.prepare_calculation()[2] == small
+    page.initial_step.setValue(0.125)
+    assert page.prepare_calculation()[2].initial_step == 0.125
+
+    large = AlgorithmParameters(precision=500, initial_step=500)
+    window.registry.update_metadata("fixed", defaults=large)
+    page.method_parameters.pop("fixed", None)
+    page.method.setCurrentIndex(page.method.findData("fixed"))
+    assert page.prepare_calculation()[2] == large
+
+    page.method.setCurrentIndex(page.method.findData("nelder-mead"))
+    assert page.prepare_calculation()[2] == replace(small, initial_step=0.125)
+
+
+def test_calculation_displays_result_and_restores_controls(app, window):
+    page = window.optimization_page
     page.precision.setValue(0.1)
     page.keep_history.setChecked(True)
     page.calculate_button.click()
@@ -152,12 +314,36 @@ def test_calculation_displays_result_and_restores_controls(app, window, method_i
     assert result is not None
     assert result.point == pytest.approx((1, 7), abs=0.1)
     assert result.value == pytest.approx(1858, abs=0.1)
+    assert result.best_history and result.stage_history
     assert page.result_values["value"].text() == "1858"
     assert page.result_values["method"].text() == result.method
     assert page.result_details.isVisible()
     assert not page.result_message.isVisible()
     assert page.calculate_button.isEnabled()
     assert page.calculation_settings.isEnabled()
+    assert not page.cancel_button.isEnabled()
+
+
+def test_small_evaluation_limit_displays_result_without_warning(app, window):
+    page = window.optimization_page
+    page.max_evaluations.setValue(2)
+    page.keep_history.setChecked(True)
+    page.calculate_button.click()
+    wait_until(app, lambda: window.worker is None)
+
+    result = page.last_result
+    assert result is not None
+    assert result.evaluations == 2
+    assert result.reason == "Достигнут лимит вычислений"
+    assert result.point is not None
+    assert page.current_problem().constraints.contains(result.point)
+    assert page.result_values["evaluations"].text() == "2"
+    assert page.result_values["reason"].text() == "Выполнено заданное число вычислений"
+    assert window.statusBar().currentMessage() == "Выполнено заданное число вычислений"
+    assert "Поиск не завершён" not in page.result_warning.text()
+    assert "Показан промежуточный результат" not in page.result_warning.text()
+    assert page.result_details.isVisible()
+    assert page.calculate_button.isEnabled()
     assert not page.cancel_button.isEnabled()
 
 
@@ -177,10 +363,28 @@ def test_task_selection_clears_previous_result_and_changes_labels(app, window):
     assert page.current_problem().direction == "minimize"
     assert page.task_heading.text() == "Другая задача"
     assert page.precision.suffix() == " с"
+    assert page.function_precision.suffix() == " К"
     assert page.last_result is None
     assert not page.result_details.isVisible()
     assert page.result_message.text() == "Расчёт ещё не выполнялся."
     wait_until(app, lambda: not window.visualization_busy)
+
+
+def test_second_builtin_task_can_be_selected_and_calculated(app, window):
+    page = window.optimization_page
+    index = next(i for i in range(page.task.count()) if page.task.itemData(i).id == "mixing-cost")
+    page.task.setCurrentIndex(index)
+
+    assert page.current_problem().direction == "minimize"
+    assert page.task_heading.text() == "Подбор режима смешения"
+    assert page.function_precision.suffix() == ""
+    assert page.method.currentData() == "nelder-mead"
+    page.calculate_button.click()
+    wait_until(app, lambda: window.worker is None)
+
+    assert page.last_result.point == pytest.approx((2, 3), abs=0.01)
+    assert page.last_result.value == pytest.approx(0, abs=0.001)
+    assert page.result_details.isVisible()
 
 
 def test_saving_task_updates_both_pages_and_selected_problem(app, window):
@@ -296,6 +500,8 @@ def start_waiting_method(app, window):
     page = window.optimization_page
     page.refresh_methods()
     page.method.setCurrentIndex(page.method.findData(plugin.metadata.id))
+    assert page.stopping_criterion.isHidden()
+    assert page.function_precision.isHidden()
     page.calculate_button.click()
     wait_until(app, plugin.entered.is_set)
     return plugin
@@ -373,42 +579,3 @@ def test_regular_user_sees_read_only_library_and_no_admin_pages(app):
         session.logout()
         admin.logout()
         storage.close()
-
-
-def test_small_evaluation_limit_displays_result_without_warning(app, window):
-    page = window.optimization_page
-    page.max_evaluations.setValue(2)
-    page.keep_history.setChecked(True)
-    page.calculate_button.click()
-    wait_until(app, lambda: window.worker is None)
-
-    result = page.last_result
-    assert result is not None
-    assert result.evaluations == 2
-    assert result.reason == "Достигнут лимит вычислений"
-    assert result.point is not None
-    assert page.current_problem().constraints.contains(result.point)
-    assert page.result_values["evaluations"].text() == "2"
-    assert page.result_values["reason"].text() == "Выполнено заданное число вычислений"
-    assert window.statusBar().currentMessage() == "Выполнено заданное число вычислений"
-    assert "Поиск не завершён" not in page.result_warning.text()
-    assert "Показан промежуточный результат" not in page.result_warning.text()
-    assert page.result_details.isVisible()
-    assert page.calculate_button.isEnabled()
-    assert not page.cancel_button.isEnabled()
-
-
-def test_second_builtin_task_can_be_selected_and_calculated(app, window):
-    page = window.optimization_page
-    index = next(i for i in range(page.task.count()) if page.task.itemData(i).id == "mixing-cost")
-    page.task.setCurrentIndex(index)
-
-    assert page.current_problem().direction == "minimize"
-    assert page.task_heading.text() == "Подбор режима смешения"
-    assert page.method.currentData() == "nelder-mead"
-    page.calculate_button.click()
-    wait_until(app, lambda: window.worker is None)
-
-    assert page.last_result.point == pytest.approx((2, 3), abs=0.01)
-    assert page.last_result.value == pytest.approx(0, abs=0.001)
-    assert page.result_details.isVisible()

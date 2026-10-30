@@ -100,11 +100,13 @@ def test_expanded_settings_and_calculation_result_remain_reachable(
     window = responsive_window
     window.resize(760, 540)
     page = window.optimization_page
+    page.stopping_criterion.setCurrentIndex(page.stopping_criterion.findData("function"))
     page.advanced_parameters.findChild(QToolButton).setChecked(True)
     settle(responsive_app, window)
     assert page.controls_scroll.horizontalScrollBar().maximum() == 0
 
     for field in (
+        page.function_precision,
         page.max_evaluations,
         page.save_defaults_button,
         page.calculate_button,

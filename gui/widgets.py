@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
+    QDoubleSpinBox,
     QLabel,
     QScrollArea,
     QSizePolicy,
@@ -8,6 +11,50 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+class ParameterSpinBox(QDoubleSpinBox):
+    """Keep saved precision while showing ordinary values without extra zeroes."""
+
+    def __init__(self, display_decimals: int, *, width_reference: float) -> None:
+        super().__init__()
+        self._display_decimals = display_decimals
+        self._width_reference = width_reference
+        self.setDecimals(max(6, display_decimals))
+
+    def textFromValue(self, value: float) -> str:
+        text = super().textFromValue(value)
+        separator = self.locale().decimalPoint()
+        if separator in text:
+            whole, fraction = text.rsplit(separator, 1)
+            minimum = getattr(self, "_display_decimals", 2)
+            fraction = fraction.rstrip("0").ljust(minimum, "0")
+            return whole + separator + fraction
+        return text
+
+    def set_parameter_value(self, value: float) -> None:
+        places = max(0, -Decimal(str(value)).as_tuple().exponent)
+        self.setDecimals(max(self.decimals(), min(323, places)))
+        self.setRange(min(self.minimum(), value), max(self.maximum(), value))
+        self.setValue(value)
+        if self.value() != value:
+            raise ValueError("Значение слишком мало для числового поля.")
+
+    def sizeHint(self) -> QSize:
+        size = super().sizeHint()
+        padding = max(0, size.width() - super().minimumSizeHint().width())
+        size.setWidth(min(size.width(), self._reference_width() + padding, 260))
+        return size
+
+    def minimumSizeHint(self) -> QSize:
+        size = super().minimumSizeHint()
+        # A larger allowed range should not move ordinary fields onto another row.
+        size.setWidth(min(size.width(), self._reference_width(), 260))
+        return size
+
+    def _reference_width(self) -> int:
+        text = self.prefix() + self.textFromValue(self._width_reference) + self.suffix()
+        return self.fontMetrics().horizontalAdvance(text)
 
 
 def fit_to_screen(widget: QWidget, preferred_size: QSize) -> None:
