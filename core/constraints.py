@@ -1,9 +1,19 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import cached_property
 from itertools import combinations
 from math import hypot, isfinite
 
 from plugin_api import Point
+
+
+def _normalize_inequality(a: float, b: float, c: float) -> tuple[float, float, float]:
+    scale = max(abs(a), abs(b))
+    if scale == 0:
+        return 0.0, 0.0, 0.0 if c == 0 else (1.0 if c > 0 else -1.0)
+    scaled_c = c / scale
+    # Keep finite input when the boundary lies beyond the floating-point range.
+    return (a / scale, b / scale, scaled_c) if isfinite(scaled_c) else (a, b, c)
 
 
 @dataclass(frozen=True)
@@ -47,14 +57,18 @@ class LinearConstraints2D:
         if any(len(row) != 3 or not all(isfinite(v) for v in row) for row in self.inequalities):
             raise ValueError("Линейное ограничение задаётся тройкой (a, b, c): ax + by ≤ c.")
 
+    @cached_property
+    def _normalized_inequalities(self) -> tuple[tuple[float, float, float], ...]:
+        return tuple(_normalize_inequality(*row) for row in self.inequalities)
+
     def contains(self, point: Point) -> bool:
         x, y = point
         return (
             all(isfinite(v) for v in point)
             and all(low <= v <= high for v, (low, high) in zip(point, self.bounds))
             and all(
-                a * x + b * y <= c + 1e-12 * max(1.0, abs(c), abs(a * x), abs(b * y))
-                for a, b, c in self.inequalities
+                a * x + b * y <= c + 1e-12 * max(abs(c), abs(a * x), abs(b * y))
+                for a, b, c in self._normalized_inequalities
             )
         )
 
@@ -70,7 +84,7 @@ class LinearConstraints2D:
     def halfplanes(self) -> tuple[tuple[float, float, float], ...]:
         (xmin, xmax), (ymin, ymax) = self.bounds
         return (
-            *self.inequalities,
+            *self._normalized_inequalities,
             (-1.0, 0.0, -xmin),
             (1.0, 0.0, xmax),
             (0.0, -1.0, -ymin),

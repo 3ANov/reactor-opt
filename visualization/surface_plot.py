@@ -287,9 +287,9 @@ class SurfacePlot(QWidget):
         self.extremum_label.setText("Экстремум: —")
         if self.marker_actor is not None:
             self.marker_actor.visibility = False
-        if result is not None and result.point is not None:
+        if result is not None and result.point is not None and result.value is not None:
             try:
-                value = float(self.problem.objective(*result.point))
+                value = float(result.value)
                 if not np.isfinite(value) or not self.problem.constraints.contains(result.point):
                     raise ValueError
             except (ValueError, ArithmeticError):

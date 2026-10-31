@@ -3,6 +3,8 @@ from collections.abc import Callable
 from dataclasses import replace
 from threading import Event
 from time import monotonic, sleep
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -12,7 +14,9 @@ from PySide6.QtCore import QCoreApplication, QEvent, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from core.auth import AuthService  # noqa: E402
+from core.constraints import LinearConstraints2D  # noqa: E402
 from core.plugin_loader import create_method_registry  # noqa: E402
+from core.problem import OptimizationProblem  # noqa: E402
 from core.storage import SQLiteStorage  # noqa: E402
 from core.tasks import TaskLibrary  # noqa: E402
 from gui.main_window import MainWindow  # noqa: E402
@@ -345,6 +349,32 @@ def test_small_evaluation_limit_displays_result_without_warning(app, window):
     assert page.result_details.isVisible()
     assert page.calculate_button.isEnabled()
     assert not page.cancel_button.isEnabled()
+
+
+def test_3d_result_marker_uses_saved_value_without_evaluating_objective():
+    from visualization.surface_plot import SurfacePlot
+
+    problem = OptimizationProblem(
+        lambda x, y: pytest.fail("Отображение результата не должно повторять вычисление"),
+        LinearConstraints2D(((0, 1), (0, 1))),
+    )
+    result = OptimizationResult((0.25, 0.75), 7.5, "test", 2, 1, "done", (), ())
+    plot = SimpleNamespace(
+        problem=problem,
+        extremum_label=Mock(),
+        marker_mesh=SimpleNamespace(points=None),
+        marker_actor=SimpleNamespace(visibility=False),
+        scene=SimpleNamespace(render=Mock()),
+        axis_labels=("x", "y"),
+        value_label="f",
+    )
+
+    SurfacePlot.set_result(plot, result)
+
+    assert plot.marker_mesh.points.tolist() == [[0.25, 0.75, 7.5]]
+    assert plot.marker_actor.visibility
+    assert "f = 7.5" in plot.extremum_label.setText.call_args.args[0]
+    plot.scene.render.assert_called_once()
 
 
 def test_task_selection_clears_previous_result_and_changes_labels(app, window):

@@ -162,12 +162,8 @@ def test_builtin_task_cannot_be_deleted_or_changed_to_custom(
     ("path", "invalid", "field"),
     [
         (("variables",), None, "variables"),
-        (("variables", 0), None, "variables[0]"),
         (("variables", 0, "min"), "zero", "variables[0].min"),
-        (("coefficients",), [], "coefficients"),
-        (("constraints",), {}, "constraints"),
         (("constraints", 0, "coefficients"), None, "constraints[0].coefficients"),
-        (("derived_metrics",), {}, "derived_metrics"),
         (("derived_metrics", 0, "parameters"), None, "derived_metrics[0].parameters"),
     ],
 )

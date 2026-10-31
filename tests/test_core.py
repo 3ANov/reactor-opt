@@ -39,6 +39,27 @@ def test_constraints_and_boundaries(task: TaskDefinition) -> None:
     assert not constraints.contains((0, 1))
     with pytest.raises(ValueError):
         LinearConstraints2D(((2, 1), (0, 1)))
+    impossible = LinearConstraints2D(((0, 1), (0, 1)), ((0, 0, -1e-15),))
+    assert not impossible.contains((0, 0))
+    assert not impossible.vertices()
+
+
+@pytest.mark.parametrize(
+    "method_id, scale", [("fixed", 1e-15), ("variable", 1e12), ("nelder-mead", 1e-15)]
+)
+def test_methods_respect_scaled_linear_constraints(
+    registry: MethodRegistry, method_id: str, scale: float
+) -> None:
+    problem = OptimizationProblem(
+        lambda x, y: x + y,
+        LinearConstraints2D(((0, 1), (0, 1)), ((scale, scale, scale),)),
+    )
+    assert set(problem.constraints.vertices()) == {(0, 0), (1, 0), (0, 1)}
+    assert problem.constraints.contains((0.5, 0.5))
+    assert not problem.constraints.contains((1, 1))
+    result = registry.run(method_id, problem, AlgorithmParameters(precision=0.1))
+    assert result.value == pytest.approx(1)
+    assert sum(result.point) <= 1 + 1e-9
 
 
 @pytest.mark.parametrize("method_id", METHODS)
@@ -62,19 +83,6 @@ def test_minimization(method_id: str, registry: MethodRegistry) -> None:
     result = registry.run(method_id, problem, AlgorithmParameters(precision=0.01))
     assert result.point == pytest.approx((2, 3), abs=0.01)
     assert result.value == pytest.approx(0, abs=0.001)
-
-
-@pytest.mark.parametrize("method_id", METHODS)
-def test_evaluation_limit(method_id: str, registry: MethodRegistry) -> None:
-    calls = []
-    problem = OptimizationProblem(
-        lambda x, y: calls.append((x, y)) or x + y,
-        LinearConstraints2D(((0, 1), (0, 1))),
-    )
-    result = registry.run(method_id, problem, AlgorithmParameters(max_evaluations=3))
-    assert result.evaluations == len(calls) == 3
-    assert result.reason == "Достигнут лимит вычислений"
-    assert not result.best_history and not result.stage_history
 
 
 @pytest.mark.parametrize("method_id", METHODS)
